@@ -35,22 +35,24 @@ _localFlake:
         };
       };
 
-      # TODO: Should definition not be automatic on flake-module import?
-      packages.render-workflows = (pkgs.writeShellApplication {
-        name = "render-workflows";
-        text = let
-          pythonEnv = pkgs.python3.withPackages (p: [ p.pyyaml ]);
-          evaluatedCI = pkgs.writeTextFile {
-            name = "evaluated-ci.json";
-            text = builtins.toJSON config.flake.actions-nix.workflows;
-          };
-          cmdLine = lib.cli.toGNUCommandLineShell { } {
-            evaluated-ci-path = evaluatedCI;
-          };
-        in ''
-          ${pythonEnv}/bin/python3 ${./render.py} ${cmdLine}
+      actions-nix = let
+        evaluated-ci.json = pkgs.writeTextFile {
+          name = "evaluated-ci.json";
+          text = builtins.toJSON config.flake.actions-nix.workflows;
+        };
+        evaluated-ci.cmdLine = lib.cli.toGNUCommandLineShell { } {
+          evaluated-ci-path = evaluated-ci.json;
+        };
+        evaluated-ci.generic-renderer = pkgs.writers.writePython3 "make-workflows-with" { libraries = [ pkgs.python3Packages.pyyaml ]; } ./render.py ;
+        evaluated-ci.render = pkgs.writeShellScript "render-workflows" ''
+          ${evaluated-ci.generic-renderer} ${evaluated-ci.cmdLine}
         '';
-      }).overrideAttrs { preferLocalBuild = true; };
+      in {
+        inherit evaluated-ci;
+      };
+
+      # TODO: Should definition not be automatic on flake-module import?
+      packages.render-workflows = config.actions-nix.evaluated-ci.render;
     };
 
   };
